@@ -1,0 +1,240 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Brawl Stars Showdown - HTML Edition</title>
+    <style>
+        body {
+            margin: 0;
+            padding: 0;
+            background-color: #1a1a1a;
+            color: white;
+            font-family: 'Arial', sans-serif;
+            overflow: hidden;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+        }
+
+        #ui-container {
+            position: absolute;
+            top: 20px;
+            left: 20px;
+            z-index: 10;
+            pointer-events: none;
+        }
+
+        .stats {
+            font-size: 24px;
+            font-weight: bold;
+            color: #ffce00;
+            text-shadow: 2px 2px #000;
+        }
+
+        canvas {
+            border: 4px solid #333;
+            box-shadow: 0 0 50px rgba(0,0,0,0.5);
+            background-color: #5d8a37; /* Colore erba */
+        }
+
+        #instructions {
+            position: absolute;
+            bottom: 20px;
+            background: rgba(0,0,0,0.7);
+            padding: 10px 20px;
+            border-radius: 20px;
+        }
+    </style>
+</head>
+<body>
+
+    <div id="ui-container">
+        <div class="stats" id="power-cubes">Power Cubes: 0</div>
+        <div class="stats" id="brawlers-left">Brawlers Rimasti: 10</div>
+    </div>
+
+    <div id="instructions">
+        Usa **WASD** per muoverti | **Mouse** per mirare e sparare
+    </div>
+
+    <canvas id="gameCanvas"></canvas>
+
+    <script>
+        const canvas = document.getElementById('gameCanvas');
+        const ctx = canvas.getContext('2d');
+        const powerCubeEl = document.getElementById('power-cubes');
+
+        // Configurazione Mondo
+        canvas.width = 800;
+        canvas.height = 800;
+        const WORLD_SIZE = 2000; // Mappa più grande della visuale
+        let poisonRadius = 1400;
+        
+        // Stato Giocatore
+        const player = {
+            x: WORLD_SIZE / 2,
+            y: WORLD_SIZE / 2,
+            radius: 25,
+            color: '#3498db',
+            speed: 5,
+            hp: 4000,
+            maxHp: 4000,
+            powerCubes: 0,
+            bullets: []
+        };
+
+        const keys = {};
+        const mouse = { x: 0, y: 0, pressed: false };
+
+        // Ostacoli e Casse
+        const boxes = [];
+        for(let i=0; i<15; i++) {
+            boxes.push({
+                x: Math.random() * (WORLD_SIZE - 200) + 100,
+                y: Math.random() * (WORLD_SIZE - 200) + 100,
+                hp: 1500,
+                size: 50
+            });
+        }
+
+        // Input Listeners
+        window.addEventListener('keydown', e => keys[e.key.toLowerCase()] = true);
+        window.addEventListener('keyup', e => keys[e.key.toLowerCase()] = false);
+        canvas.addEventListener('mousemove', e => {
+            const rect = canvas.getBoundingClientRect();
+            mouse.x = e.clientX - rect.left;
+            mouse.y = e.clientY - rect.top;
+        });
+        canvas.addEventListener('mousedown', () => shoot());
+
+        function shoot() {
+            const angle = Math.atan2(mouse.y - canvas.height/2, mouse.x - canvas.width/2);
+            player.bullets.push({
+                x: player.x,
+                y: player.y,
+                vx: Math.cos(angle) * 12,
+                vy: Math.sin(angle) * 12,
+                dist: 0
+            });
+        }
+
+        function update() {
+            // Movimento
+            if (keys['w'] && player.y > 0) player.y -= player.speed;
+            if (keys['s'] && player.y < WORLD_SIZE) player.y += player.speed;
+            if (keys['a'] && player.x > 0) player.x -= player.speed;
+            if (keys['d'] && player.x < WORLD_SIZE) player.x += player.speed;
+
+            // Restringimento Gas (Poison)
+            if (poisonRadius > 100) poisonRadius -= 0.2;
+
+            // Logica Proiettili e Collisioni
+            player.bullets.forEach((b, index) => {
+                b.x += b.vx;
+                b.y += b.vy;
+                b.dist += 12;
+
+                // Collisione con casse
+                boxes.forEach(box => {
+                    if (b.x > box.x && b.x < box.x + box.size && b.y > box.y && b.y < box.y + box.size && box.hp > 0) {
+                        box.hp -= 500 + (player.powerCubes * 100);
+                        player.bullets.splice(index, 1);
+                    }
+                });
+
+                if (b.dist > 400) player.bullets.splice(index, 1);
+            });
+
+            // Controllo Casse Distrutte
+            boxes.forEach(box => {
+                if (box.hp <= 0 && !box.collected) {
+                    box.collected = true;
+                    player.powerCubes++;
+                    player.maxHp += 400;
+                    player.hp += 400;
+                    powerCubeEl.innerText = `Power Cubes: ${player.powerCubes}`;
+                }
+            });
+
+            // Danno da Gas
+            const distFromCenter = Math.sqrt(Math.pow(player.x - WORLD_SIZE/2, 2) + Math.pow(player.y - WORLD_SIZE/2, 2));
+            if (distFromCenter > poisonRadius) {
+                player.hp -= 5;
+            }
+        }
+
+        function draw() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.save();
+            // Camera follow
+            ctx.translate(canvas.width/2 - player.x, canvas.height/2 - player.y);
+
+            // Disegna Terreno (Grid)
+            ctx.strokeStyle = "#4d7a27";
+            for(let x=0; x<WORLD_SIZE; x+=100) {
+                for(let y=0; y<WORLD_SIZE; y+=100) {
+                    ctx.strokeRect(x, y, 100, 100);
+                }
+            }
+
+            // Disegna Gas
+            ctx.beginPath();
+            ctx.arc(WORLD_SIZE/2, WORLD_SIZE/2, poisonRadius, 0, Math.PI*2);
+            ctx.lineWidth = 1000;
+            ctx.strokeStyle = "rgba(128, 0, 128, 0.4)";
+            ctx.stroke();
+
+            // Disegna Casse
+            boxes.forEach(box => {
+                if (box.hp > 0) {
+                    ctx.fillStyle = "#e67e22";
+                    ctx.fillRect(box.x, box.y, box.size, box.size);
+                    ctx.fillStyle = "white";
+                    ctx.fillText(box.hp, box.x + 5, box.y - 5);
+                }
+            });
+
+            // Disegna Proiettili
+            ctx.fillStyle = "#f1c40f";
+            player.bullets.forEach(b => {
+                ctx.beginPath();
+                ctx.arc(b.x, b.y, 8, 0, Math.PI*2);
+                ctx.fill();
+            });
+
+            // Disegna Player
+            ctx.fillStyle = player.color;
+            ctx.beginPath();
+            ctx.arc(player.x, player.y, player.radius, 0, Math.PI*2);
+            ctx.fill();
+
+            // Barra HP
+            ctx.fillStyle = "#c0392b";
+            ctx.fillRect(player.x - 30, player.y - 50, 60, 10);
+            ctx.fillStyle = "#2ecc71";
+            ctx.fillRect(player.x - 30, player.y - 50, (player.hp / player.maxHp) * 60, 10);
+
+            ctx.restore();
+
+            if (player.hp <= 0) {
+                ctx.fillStyle = "rgba(0,0,0,0.8)";
+                ctx.fillRect(0,0, canvas.width, canvas.height);
+                ctx.fillStyle = "red";
+                ctx.font = "50px Arial";
+                ctx.fillText("SCONFITTO", canvas.width/2 - 130, canvas.height/2);
+                return;
+            }
+
+            requestAnimationFrame(() => {
+                update();
+                draw();
+            });
+        }
+
+        draw();
+    </script>
+</body>
+</html>
